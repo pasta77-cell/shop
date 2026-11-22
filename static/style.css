@@ -1,0 +1,10 @@
+body{font-family:sans-serif;margin:1rem;}
+.row{display:flex;gap:2rem;}
+.col{flex:1;}
+#q{width:300px;font-size:1.1rem;padding:.4rem;}
+#sug{list-style:none;padding:0;max-height:200px;overflow:auto;}
+#sug li{padding:.3rem;cursor:pointer;}
+#sug li:hover{background:#eee;}
+table{border-collapse:collapse;margin:.5rem 0;}
+td,th{border:1px solid #ccc;padding:.3rem;}
+#warn{color:#b00;margin-top:.5rem;}
