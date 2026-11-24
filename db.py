@@ -16,7 +16,8 @@ def init_db():
       name TEXT NOT NULL,
       name_norm TEXT NOT NULL,
       price INTEGER NOT NULL DEFAULT 0,
-      stock INTEGER NOT NULL DEFAULT 0
+      stock INTEGER NOT NULL DEFAULT 0,
+      address TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS sales(
       id INTEGER PRIMARY KEY,
@@ -31,6 +32,9 @@ def init_db():
       unit_price INTEGER NOT NULL
     );
     """)
+    cols = [r[1] for r in c.execute("PRAGMA table_info(articles)").fetchall()]
+    if "address" not in cols:
+        c.execute("ALTER TABLE articles ADD COLUMN address TEXT NOT NULL DEFAULT ''")
     c.commit(); c.close()
 
 def norm(s):
@@ -103,45 +107,27 @@ def search(q):
 def confirm_sale(items):
     c = get_conn()
     cur = c.cursor()
-    warnings=[]
+    warnings = []
     try:
         cur.execute("BEGIN IMMEDIATE")
-        total=0
-        for it in items:
-            aid=it["article_id"]; qty=it["qty"]
-            price, stock = cur.execute("SELECT price,stock FROM articles WHERE id=?", (aid,)).fetchone()
-            if qty > stock:
-                warnings.append(f"{aid}: only {stock} in stock, sold {qty}")
-            cur.execute("UPDATE articles SET stock=stock-? WHERE id=?", (qty, aid))
-            cur.execute("INSERT INTO sale_items(sale_id,article_id,quantity,unit_price) VALUES (?,?,?,?)",
-                        (None, aid, qty, price))  # placeholder, fix below
-        # fix: need sale_id first. redo properly:
-        c.rollback()
-        raise RuntimeError("placeholder")
-    except Exception:
-        c.rollback(); c.close(); raise
-
-def confirm_sale2(items):
-    # proper version
-    c = get_conn()
-    cur = c.cursor()
-    warnings=[]
-    try:
-        cur.execute("BEGIN IMMEDIATE")
-        # create sale row first with total 0, update later
         cur.execute("INSERT INTO sales(sold_at,total) VALUES (?,0)", (datetime.now().isoformat(),))
         sale_id = cur.lastrowid
-        total=0
+        total = 0
         for it in items:
-            aid=it["article_id"]; qty=it["qty"]
-            price, stock = cur.execute("SELECT price,stock FROM articles WHERE id=?", (aid,)).fetchone()
+            aid = int(it["article_id"])
+            qty = int(it["qty"])
+            if qty < 1:
+                raise ValueError("qty must be >= 1")
+            row = cur.execute("SELECT name,price,stock FROM articles WHERE id=?", (aid,)).fetchone()
+            if row is None:
+                raise ValueError(f"unknown article {aid}")
+            name, price, stock = row
             if qty > stock:
-                name = cur.execute("SELECT name FROM articles WHERE id=?", (aid,)).fetchone()[0]
                 warnings.append(f"{name}: only {stock} in stock, sold {qty}")
             cur.execute("UPDATE articles SET stock=stock-? WHERE id=?", (qty, aid))
             cur.execute("INSERT INTO sale_items(sale_id,article_id,quantity,unit_price) VALUES (?,?,?,?)",
                         (sale_id, aid, qty, price))
-            total += qty*price
+            total += qty * price
         cur.execute("UPDATE sales SET total=? WHERE id=?", (total, sale_id))
         c.commit()
         return sale_id, warnings, total
@@ -150,9 +136,6 @@ def confirm_sale2(items):
         raise
     finally:
         c.close()
-
-# alias
-confirm_sale = confirm_sale2
 
 def today_sales():
     c = get_conn()
@@ -171,12 +154,32 @@ def today_total():
     return t
 
 def all_articles():
-    c=get_conn()
-    rows=c.execute("SELECT id,name,price,stock FROM articles ORDER BY name").fetchall()
+    c = get_conn()
+    rows = c.execute("SELECT id,name,price,stock,address FROM articles ORDER BY name").fetchall()
     c.close()
     return rows
 
-def update_article(aid, price, stock):
-    c=get_conn()
-    c.execute("UPDATE articles SET price=?, stock=? WHERE id=?", (price, stock, aid))
+def update_article(aid, price, stock, address):
+    c = get_conn()
+    c.execute("UPDATE articles SET price=?, stock=?, address=? WHERE id=?", (price, stock, address, aid))
     c.commit(); c.close()
+
+def add_article(name, price, stock, address):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    address = (address or "").strip()
+    nn = norm(name)
+    c = get_conn()
+    try:
+        exists = c.execute("SELECT 1 FROM articles WHERE name_norm=?", (nn,)).fetchone()
+        if exists:
+            raise ValueError("product already exists")
+        cur = c.cursor()
+        cur.execute("INSERT INTO articles(name,name_norm,price,stock,address) VALUES (?,?,?,?,?)",
+                    (name, nn, int(price), int(stock), address))
+        aid = cur.lastrowid
+        c.commit()
+        return {"id": aid, "name": name, "price": int(price), "stock": int(stock), "address": address}
+    finally:
+        c.close()

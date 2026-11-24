@@ -8,3 +8,6 @@ body{font-family:sans-serif;margin:1rem;}
 table{border-collapse:collapse;margin:.5rem 0;}
 td,th{border:1px solid #ccc;padding:.3rem;}
 #warn{color:#b00;margin-top:.5rem;}
+#addbox{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0;}
+#addbox label{display:flex;gap:.3rem;align-items:center;}
+#invq{margin:.5rem 0;}

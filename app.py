@@ -16,12 +16,20 @@ def suggest():
 
 @app.route("/confirm", methods=["POST"])
 def confirm():
-    data = request.json or {}
-    items = data.get("items", [])
-    if not items:
-        return jsonify({"error":"empty"}), 400
-    sid, warnings, total = db.confirm_sale(items)
-    return jsonify({"id":sid,"warnings":warnings,"total":total})
+    data = request.get_json(silent=True) or {}
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "empty"}), 400
+    try:
+        normalized = []
+        for it in items:
+            if not isinstance(it, dict):
+                return jsonify({"error": "bad item"}), 400
+            normalized.append({"article_id": int(it["article_id"]), "qty": int(it["qty"])})
+        sid, warnings, total = db.confirm_sale(normalized)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": sid, "warnings": warnings, "total": total})
 
 @app.route("/today")
 def today():
@@ -29,14 +37,41 @@ def today():
 
 @app.route("/inventory")
 def inventory():
-    return jsonify([{"id":a[0],"name":a[1],"price":a[2],"stock":a[3]} for a in db.all_articles()])
+    return render_template("inventory.html")
 
-@app.route("/update_article", methods=["POST"])
-def update_article():
-    d = request.json
-    price = int(d["price"]) if d.get("price") is not None else 0
-    db.update_article(d["id"], price, int(d["stock"]))
-    return jsonify({"ok":True})
+@app.route("/api/inventory")
+def api_inventory():
+    return jsonify([{"id": a[0], "name": a[1], "price": a[2], "stock": a[3], "address": a[4]} for a in db.all_articles()])
+
+@app.route("/api/update_article", methods=["POST"])
+def api_update_article():
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return jsonify({"error": "bad request"}), 400
+    try:
+        aid = int(d["id"])
+        price = int(d.get("price", 0))
+        stock = int(d.get("stock", 0))
+        address = (d.get("address") or "").strip()
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    db.update_article(aid, price, stock, address)
+    return jsonify({"ok": True})
+
+@app.route("/api/add_article", methods=["POST"])
+def api_add_article():
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return jsonify({"error": "bad request"}), 400
+    try:
+        name = (d.get("name") or "").strip()
+        address = (d.get("address") or "").strip()
+        price = int(d.get("price", 0) or 0)
+        stock = int(d.get("stock", 0) or 0)
+        article = db.add_article(name, price, stock, address)
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(article)
 
 if __name__ == "__main__":
     db.init_db()
