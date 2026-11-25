@@ -31,6 +31,19 @@ def init_db():
       quantity INTEGER NOT NULL,
       unit_price INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS incoming(
+      id INTEGER PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      source_image TEXT NOT NULL DEFAULT '',
+      product_name TEXT NOT NULL,
+      product_name_norm TEXT NOT NULL,
+      qty_bought INTEGER NOT NULL,
+      unit_purchase_price INTEGER NOT NULL DEFAULT 0,
+      sell_price INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      approved_at TEXT,
+      note TEXT NOT NULL DEFAULT ''
+    );
     """)
     cols = [r[1] for r in c.execute("PRAGMA table_info(articles)").fetchall()]
     if "address" not in cols:
@@ -181,5 +194,117 @@ def add_article(name, price, stock, address):
         aid = cur.lastrowid
         c.commit()
         return {"id": aid, "name": name, "price": int(price), "stock": int(stock), "address": address}
+    finally:
+        c.close()
+
+
+def add_incoming_item(source_image, product_name, qty_bought, unit_purchase_price, sell_price, note=""):
+    product_name = (product_name or "").strip()
+    if not product_name:
+        raise ValueError("product_name is required")
+    qty_bought = int(qty_bought)
+    if qty_bought < 1:
+        raise ValueError("qty_bought must be >= 1")
+    unit_purchase_price = int(unit_purchase_price)
+    sell_price = int(sell_price)
+    nn = norm(product_name)
+    c = get_conn()
+    try:
+        cur = c.cursor()
+        cur.execute(
+            "INSERT INTO incoming(created_at,source_image,product_name,product_name_norm,qty_bought,unit_purchase_price,sell_price,note) VALUES (?,?,?,?,?,?,?,?)",
+            (datetime.now().isoformat(), (source_image or "").strip(), product_name, nn, qty_bought, unit_purchase_price, sell_price, (note or "").strip()),
+        )
+        iid = cur.lastrowid
+        c.commit()
+        return {"id": iid, "product_name": product_name, "qty_bought": qty_bought, "unit_purchase_price": unit_purchase_price, "sell_price": sell_price, "status": "pending", "source_image": (source_image or "").strip(), "note": (note or "").strip()}
+    finally:
+        c.close()
+
+
+def list_incoming_items(status=None):
+    c = get_conn()
+    try:
+        if status:
+            rows = c.execute(
+                "SELECT id,created_at,source_image,product_name,qty_bought,unit_purchase_price,sell_price,status,approved_at,note FROM incoming WHERE status=? ORDER BY id DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT id,created_at,source_image,product_name,qty_bought,unit_purchase_price,sell_price,status,approved_at,note FROM incoming ORDER BY id DESC"
+            ).fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "id": r[0],
+                "created_at": r[1],
+                "source_image": r[2],
+                "product_name": r[3],
+                "qty_bought": r[4],
+                "unit_purchase_price": r[5],
+                "sell_price": r[6],
+                "status": r[7],
+                "approved_at": r[8],
+                "note": r[9],
+            })
+        return out
+    finally:
+        c.close()
+
+
+def approve_incoming_item(incoming_id):
+    c = get_conn()
+    try:
+        cur = c.cursor()
+        row = cur.execute(
+            "SELECT id,product_name,product_name_norm,qty_bought,sell_price,status FROM incoming WHERE id=?",
+            (int(incoming_id),),
+        ).fetchone()
+        if row is None:
+            raise ValueError("incoming item not found")
+        iid, pname, pnorm, qty_bought, sell_price, status = row
+        if status != "pending":
+            raise ValueError("only pending items can be approved")
+        # find existing article by name_norm
+        art = cur.execute("SELECT id,stock FROM articles WHERE name_norm=?", (pnorm,)).fetchone()
+        if art is not None:
+            aid, old_stock = art
+            cur.execute("UPDATE articles SET stock=?, price=? WHERE id=?", (int(old_stock) + int(qty_bought), int(sell_price), aid))
+            article_action = "updated"
+        else:
+            cur.execute(
+                "INSERT INTO articles(name,name_norm,price,stock,address) VALUES (?,?,?,?,?)",
+                (pname, pnorm, int(sell_price), int(qty_bought), ""),
+            )
+            article_action = "created"
+        cur.execute(
+            "UPDATE incoming SET status='approved', approved_at=? WHERE id=?",
+            (datetime.now().isoformat(), iid),
+        )
+        c.commit()
+        return {"id": iid, "article_action": article_action}
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
+
+
+def reject_incoming_item(incoming_id):
+    c = get_conn()
+    try:
+        cur = c.cursor()
+        row = cur.execute("SELECT status FROM incoming WHERE id=?", (int(incoming_id),)).fetchone()
+        if row is None:
+            raise ValueError("incoming item not found")
+        if row[0] != "pending":
+            raise ValueError("only pending items can be rejected")
+        cur.execute("UPDATE incoming SET status='rejected' WHERE id=?", (int(incoming_id),))
+        c.commit()
+        return {"id": int(incoming_id)}
+    except Exception:
+        c.rollback()
+        raise
     finally:
         c.close()

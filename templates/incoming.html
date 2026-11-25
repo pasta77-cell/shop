@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Incoming - Shop</title>
+<link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<h1>Incoming (new products, not in inventory yet)</h1>
+<p><a href="/">Back to sales</a> | <a href="/inventory">Inventory</a></p>
+
+<h2>Add incoming item (from photo/table)</h2>
+<div id="addbox">
+  <label>Source image <input id="in-source" placeholder="e.g. facture.jpeg" style="width:180px"></label><br><br>
+  <label>Product name <input id="in-name" placeholder="required" style="width:260px"></label><br><br>
+  <label>Qty bought <input id="in-qty" placeholder="1" style="width:80px" type="number" min="1"></label><br><br>
+  <label>Unit purchase price (TND) <input id="in-purchase" placeholder="0.000" style="width:100px"></label><br><br>
+  <label>Selling price (TND) <input id="in-sell" placeholder="0.000" style="width:100px"></label><br><br>
+  <label>Note <input id="in-note" placeholder="optional" style="width:260px"></label><br><br>
+  <button id="add-incoming">Add to incoming</button>
+  <span id="addstatus"></span>
+</div>
+
+<h2>Incoming list</h2>
+<button id="import-csv">Import from facture_produits_prix.csv</button>
+<span id="importstatus"></span>
+<br><br>
+<label>Filter: 
+  <select id="status-filter">
+    <option value="pending" selected>pending</option>
+    <option value="approved">approved</option>
+    <option value="rejected">rejected</option>
+    <option value="">all</option>
+  </select>
+</label>
+<span id="liststatus"></span>
+<table id="incomingt" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; margin-top:8px;"></table>
+
+<script src="/static/incoming.js"></script>
+</body></html>
